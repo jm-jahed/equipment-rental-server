@@ -26,7 +26,10 @@
     "jose": "^6.2.18",
     "jsonwebtoken": "^9.0.3",
     "mongodb": "^7.9.1",
-    "mongoose": "^9.12.3"
+    "mongoose": "^9.12.3",
+    "node-cron": "^4.6.0",
+    "nodemailer": "^10.6.1",
+    "stripe": "^23.2.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -34,6 +37,8 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.6.6",
+    "@types/node-cron": "^3.0.11",
+    "@types/nodemailer": "^8.0.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }

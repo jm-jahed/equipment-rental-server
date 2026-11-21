@@ -23,6 +23,15 @@ export const auth = betterAuth({
     database: {
       generateId: false, // Ensures MongoDB driver creates native BSON ObjectIds
     },
+    cookiePrefix: "better-auth",
+    crossSubDomainCookies: {
+      enabled: false,
+    },
+    defaultCookieAttributes: {
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      secure: process.env.NODE_ENV === "production",
+      httpOnly: true,
+    },
   },
   user: {
     modelName: "users", // Target existing users collection
@@ -30,7 +39,7 @@ export const auth = betterAuth({
       role: {
         type: "string",
         defaultValue: "Customer",
-        input: false, // Prevents privilege escalation during public registration
+        input: false, // Prevents privilege escalation during registration
         returned: true,
       },
       phone: {

@@ -2,16 +2,17 @@ import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { User, IUser } from "../models/User";
+import { mongoDb } from "../config/mongoClient";
 import { verifyToken, AuthRequest } from "../middlewares/auth";
 
 const router = Router();
 
-// Helper to issue JWT access token
+// Helper to issue JWT access token (HS256 fallback and compatibility)
 const generateToken = (user: IUser & { _id: any }) => {
   const secret = process.env.JWT_SECRET || "fallback_secret_key";
   return jwt.sign(
     {
-      id: user._id,
+      id: user._id.toString(),
       email: user.email,
       role: user.role,
       name: user.name,
@@ -61,7 +62,7 @@ router.post("/register", async (req: Request, res: Response) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create user (default role: Customer)
+    // Create user (strictly enforce default role: Customer)
     const newUser = await User.create({
       name: name.trim(),
       email: normalizedEmail,
@@ -70,6 +71,20 @@ router.post("/register", async (req: Request, res: Response) => {
       image: image || "",
     });
 
+    // Idempotently create BetterAuth account record for full dual-compatibility
+    try {
+      await mongoDb.collection("account").insertOne({
+        userId: newUser._id,
+        accountId: newUser._id.toString(),
+        providerId: "credential",
+        password: hashedPassword,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    } catch (accountError) {
+      console.warn("Notice: account record could not be pre-created, will be linked on first login:", accountError);
+    }
+
     const token = generateToken(newUser);
 
     return res.status(201).json({
@@ -77,7 +92,7 @@ router.post("/register", async (req: Request, res: Response) => {
       message: "Registration successful! Welcome to RentEquip.",
       token,
       user: {
-        id: newUser._id,
+        id: newUser._id.toString(),
         name: newUser.name,
         email: newUser.email,
         role: newUser.role,
@@ -108,19 +123,53 @@ router.post("/login", async (req: Request, res: Response) => {
     const normalizedEmail = email.toLowerCase().trim();
     const user = await User.findOne({ email: normalizedEmail });
 
-    if (!user || !user.password) {
+    if (!user) {
       return res.status(401).json({
         success: false,
         message: "Invalid email or password.",
       });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
+    // Verify password against legacy password or account record
+    let isMatch = false;
+    if (user.password) {
+      isMatch = await bcrypt.compare(password, user.password);
+    } else {
+      // Check BetterAuth account collection
+      const accountDoc = await mongoDb.collection("account").findOne({
+        userId: user._id,
+        providerId: "credential",
+      });
+      if (accountDoc && accountDoc.password) {
+        isMatch = await bcrypt.compare(password, accountDoc.password);
+      }
+    }
+
     if (!isMatch) {
       return res.status(401).json({
         success: false,
         message: "Invalid email or password.",
       });
+    }
+
+    // Ensure BetterAuth account document exists for existing user
+    try {
+      const existingAccount = await mongoDb.collection("account").findOne({
+        userId: user._id,
+        providerId: "credential",
+      });
+      if (!existingAccount && user.password) {
+        await mongoDb.collection("account").insertOne({
+          userId: user._id,
+          accountId: user._id.toString(),
+          providerId: "credential",
+          password: user.password,
+          createdAt: user.createdAt || new Date(),
+          updatedAt: new Date(),
+        });
+      }
+    } catch (syncErr) {
+      console.warn("Notice: account synchronization warning:", syncErr);
     }
 
     const token = generateToken(user);
@@ -130,7 +179,7 @@ router.post("/login", async (req: Request, res: Response) => {
       message: "Login successful! Welcome back.",
       token,
       user: {
-        id: user._id,
+        id: user._id.toString(),
         name: user.name,
         email: user.email,
         role: user.role,
@@ -181,7 +230,7 @@ router.post("/google", async (req: Request, res: Response) => {
       message: "Google login successful!",
       token,
       user: {
-        id: user._id,
+        id: user._id.toString(),
         name: user.name,
         email: user.email,
         role: user.role,
@@ -194,6 +243,50 @@ router.post("/google", async (req: Request, res: Response) => {
       success: false,
       message: "An error occurred during Google authentication.",
     });
+  }
+});
+
+// GET /api/auth/session-token
+// Bridges BetterAuth social/OAuth session cookies to application JWT token
+router.get("/session-token", async (req: Request, res: Response) => {
+  try {
+    const rawCookies = req.headers.cookie || "";
+    const match = rawCookies.match(/(?:better-auth\.|__Secure-better-auth\.)session_token=([^;]+)/);
+    const sessionToken = match ? decodeURIComponent(match[1]) : null;
+
+    if (!sessionToken) {
+      return res.status(401).json({ success: false, message: "No active session cookie found." });
+    }
+
+    const sessionDoc = await mongoDb.collection("session").findOne({
+      token: sessionToken,
+      expiresAt: { $gt: new Date() },
+    });
+
+    if (!sessionDoc || !sessionDoc.userId) {
+      return res.status(401).json({ success: false, message: "Session expired or invalid." });
+    }
+
+    const user = await User.findById(sessionDoc.userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "Associated user not found." });
+    }
+
+    const token = generateToken(user);
+    return res.status(200).json({
+      success: true,
+      token,
+      user: {
+        id: user._id.toString(),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        image: user.image,
+      },
+    });
+  } catch (err: any) {
+    console.error("Session token bridge error:", err);
+    return res.status(500).json({ success: false, message: "Failed to bridge session." });
   }
 });
 
@@ -212,13 +305,13 @@ router.get("/me", verifyToken, async (req: AuthRequest, res: Response) => {
     return res.status(200).json({
       success: true,
       user: {
-        id: user._id,
+        id: user._id.toString(),
         name: user.name,
         email: user.email,
         role: user.role,
         image: user.image,
-        phone: user.phone,
-        address: user.address,
+        phone: user.phone || "",
+        address: user.address || "",
       },
     });
   } catch (error: any) {
@@ -226,6 +319,48 @@ router.get("/me", verifyToken, async (req: AuthRequest, res: Response) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch user profile.",
+    });
+  }
+});
+
+// PATCH /api/auth/profile
+router.patch("/profile", verifyToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { name, image, phone, address } = req.body;
+    const user = await User.findById(req.user?.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User profile not found.",
+      });
+    }
+
+    if (name) user.name = name.trim();
+    if (image !== undefined) user.image = image;
+    if (phone !== undefined) user.phone = phone.trim();
+    if (address !== undefined) user.address = address.trim();
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile updated successfully.",
+      user: {
+        id: user._id.toString(),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        image: user.image,
+        phone: user.phone || "",
+        address: user.address || "",
+      },
+    });
+  } catch (error: any) {
+    console.error("Profile update error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update profile.",
     });
   }
 });

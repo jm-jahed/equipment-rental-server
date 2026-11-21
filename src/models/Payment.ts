@@ -75,8 +75,6 @@ const paymentSchema = new Schema<IPayment>(
 );
 
 // Indexes
-paymentSchema.index({ bookingId: 1 }, { unique: true });
-paymentSchema.index({ transactionId: 1 }, { unique: true });
 paymentSchema.index({ customerId: 1 });
 paymentSchema.index({ ownerId: 1 });
 paymentSchema.index({ stripeSessionId: 1 });

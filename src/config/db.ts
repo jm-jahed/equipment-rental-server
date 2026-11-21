@@ -5,10 +5,10 @@ import dns from "dns";
 // fallback to system router / public DNS to resolve Atlas SRV records.
 const currentDns = dns.getServers();
 if (!currentDns || currentDns.length === 0 || (currentDns.length === 1 && currentDns[0] === "127.0.0.1")) {
-  dns.setServers(["192.168.0.1", "8.8.8.8"]);
+  dns.setServers(["192.168.0.1", "8.8.8.8", "1.1.1.1"]);
 }
 
-export const connectDB = async (): Promise<boolean> => {
+export const connectDB = async (dbNameOverride?: string): Promise<boolean> => {
   const uri = process.env.MONGODB_URI;
 
   if (!uri) {
@@ -17,10 +17,17 @@ export const connectDB = async (): Promise<boolean> => {
   }
 
   try {
-    await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: 5000
-    });
-    console.log("Connected to MongoDB Atlas successfully");
+    const options: mongoose.ConnectOptions = {
+      serverSelectionTimeoutMS: 5000,
+    };
+
+    // Allows automated test suites to target an isolated test database (e.g. equipment_rental_test_verify)
+    if (dbNameOverride) {
+      options.dbName = dbNameOverride;
+    }
+
+    await mongoose.connect(uri, options);
+    console.log(`Connected to MongoDB Atlas successfully [db: ${options.dbName || "default"}]`);
     return true;
   } catch (error: any) {
     console.error("MongoDB Atlas connection error:", error.message || error);

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import jwt from "jsonwebtoken";
 import { User, UserRole } from "../models/User";
 
 export interface AuthUserPayload {
@@ -14,13 +15,21 @@ export interface AuthRequest extends Request {
 }
 
 const AUTH_URL = process.env.BETTER_AUTH_URL || "http://localhost:5000";
+const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret_key";
 
 // Remote JWKS set pointing to BetterAuth's official JWKS endpoint
-const JWKS = createRemoteJWKSet(new URL(`${AUTH_URL}/api/auth/jwks`));
+let jwksInstance: ReturnType<typeof createRemoteJWKSet> | null = null;
+const getJWKS = () => {
+  if (!jwksInstance) {
+    jwksInstance = createRemoteJWKSet(new URL(`${AUTH_URL}/api/auth/jwks`));
+  }
+  return jwksInstance;
+};
 
 /**
  * Middleware: verifyToken
- * Validates the JWT Bearer token using BetterAuth JWKS and loads fresh user role from MongoDB.
+ * Validates the JWT Bearer token using BetterAuth JWKS (RS256) or JWT_SECRET (HS256)
+ * and loads fresh user role from MongoDB to prevent stale role authorization.
  */
 export const verifyToken = async (req: AuthRequest, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
@@ -33,23 +42,37 @@ export const verifyToken = async (req: AuthRequest, res: Response, next: NextFun
   }
 
   const token = authHeader.split(" ")[1];
+  let userId: string | undefined;
 
+  // 1. Try RS256 JWKS verification (BetterAuth standard)
   try {
-    // Validate cryptographic signature, expiration, issuer, and audience
-    const { payload } = await jwtVerify(token, JWKS, {
+    const { payload } = await jwtVerify(token, getJWKS(), {
       issuer: AUTH_URL,
       audience: AUTH_URL,
     });
-
-    const userId = payload.sub;
-    if (!userId) {
+    userId = payload.sub || (payload.id as string);
+  } catch (jwksError) {
+    // 2. Fallback to HS256 verification (symmetric secret)
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      userId = decoded.id || decoded.sub;
+    } catch (hsError) {
       return res.status(401).json({
         success: false,
-        message: "Invalid token payload: missing subject claim.",
+        message: "Invalid or expired JWT token.",
       });
     }
+  }
 
-    // Load fresh user data directly from MongoDB Atlas to prevent stale role authorization
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      message: "Invalid token payload: missing subject identifier.",
+    });
+  }
+
+  try {
+    // Load fresh user data directly from MongoDB Atlas to enforce real-time RBAC
     const user = await User.findById(userId);
     if (!user) {
       return res.status(401).json({
@@ -66,11 +89,11 @@ export const verifyToken = async (req: AuthRequest, res: Response, next: NextFun
     };
 
     next();
-  } catch (error: any) {
-    return res.status(401).json({
+  } catch (dbError: any) {
+    return res.status(500).json({
       success: false,
-      message: "Invalid or expired JWT token.",
-      error: error.message,
+      message: "Database error during authentication verification.",
+      error: dbError.message,
     });
   }
 };
