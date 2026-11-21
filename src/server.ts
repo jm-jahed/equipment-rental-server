@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import { connectDB } from "./config/db";
+import authRoutes from "./routes/auth.routes";
 
 dotenv.config();
 
@@ -16,6 +17,9 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+
+// API Routes
+app.use("/api/auth", authRoutes);
 
 // Root endpoint
 app.get("/", (req: Request, res: Response) => {
