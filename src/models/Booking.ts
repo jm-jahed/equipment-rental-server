@@ -11,6 +11,7 @@ export interface IBooking {
   endDate: Date;
   quantity: number;
   totalAmount: number;
+  currency?: string;
   contactNumber: string;
   deliveryAddress: string;
   additionalNotes?: string;
@@ -57,6 +58,11 @@ const bookingSchema = new Schema<IBooking>(
       type: Number,
       required: [true, "Total amount is required"],
       min: [0, "Total amount cannot be negative"],
+    },
+    currency: {
+      type: String,
+      default: "BDT",
+      trim: true,
     },
     contactNumber: {
       type: String,

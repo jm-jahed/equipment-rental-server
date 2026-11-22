@@ -16,6 +16,7 @@ export interface IEquipment {
   model?: string;
   image: string;
   rentalTerms?: string;
+  currency?: string;
   status: EquipmentStatus;
   ownerId: Types.ObjectId;
   createdAt?: Date;
@@ -78,6 +79,11 @@ const equipmentSchema = new Schema<IEquipment>(
     rentalTerms: {
       type: String,
       default: "",
+    },
+    currency: {
+      type: String,
+      default: "BDT",
+      trim: true,
     },
     status: {
       type: String,

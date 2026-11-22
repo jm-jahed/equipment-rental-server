@@ -308,6 +308,7 @@ router.post("/", verifyToken, verifyOwner, async (req: AuthRequest, res: Respons
       model = "",
       image,
       rentalTerms = "",
+      currency = "BDT",
     } = req.body;
 
     // Field validation
@@ -319,18 +320,26 @@ router.post("/", verifyToken, verifyOwner, async (req: AuthRequest, res: Respons
     }
 
     const price = Number(rentalPrice);
-    if (isNaN(price) || price < 0) {
+    if (isNaN(price) || price <= 0) {
       return res.status(400).json({
         success: false,
-        message: "Rental price must be a non-negative number.",
+        message: "Rental price must be a positive number greater than zero.",
       });
     }
 
-    const quantity = Number(availableQuantity);
-    if (isNaN(quantity) || quantity < 0) {
+    const quantity = parseInt(String(availableQuantity), 10);
+    if (isNaN(quantity) || quantity < 1) {
       return res.status(400).json({
         success: false,
-        message: "Available quantity must be a non-negative number.",
+        message: "Available quantity must be an integer of at least 1.",
+      });
+    }
+
+    const validRentalTypes: RentalType[] = ["Daily", "Weekly", "Monthly"];
+    if (rentalType && !validRentalTypes.includes(rentalType as RentalType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Rental type must be one of: Daily, Weekly, Monthly.",
       });
     }
 
@@ -356,6 +365,7 @@ router.post("/", verifyToken, verifyOwner, async (req: AuthRequest, res: Respons
       model: model.trim(),
       image: image.trim(),
       rentalTerms: rentalTerms.trim(),
+      currency: currency.trim().toUpperCase(),
       status,
       ownerId,
     });
@@ -411,6 +421,39 @@ const handleUpdateEquipment = async (req: AuthRequest, res: Response) => {
     }
 
     const updates = req.body;
+
+    if (updates.rentalPrice !== undefined) {
+      const price = Number(updates.rentalPrice);
+      if (isNaN(price) || price <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Rental price must be a positive number greater than zero.",
+        });
+      }
+      updates.rentalPrice = price;
+    }
+
+    if (updates.availableQuantity !== undefined) {
+      const qty = parseInt(String(updates.availableQuantity), 10);
+      if (isNaN(qty) || qty < 1) {
+        return res.status(400).json({
+          success: false,
+          message: "Available quantity must be an integer of at least 1.",
+        });
+      }
+      updates.availableQuantity = qty;
+    }
+
+    if (updates.rentalType !== undefined) {
+      const validRentalTypes: RentalType[] = ["Daily", "Weekly", "Monthly"];
+      if (!validRentalTypes.includes(updates.rentalType)) {
+        return res.status(400).json({
+          success: false,
+          message: "Rental type must be one of: Daily, Weekly, Monthly.",
+        });
+      }
+    }
+
     const allowedFields = [
       "name",
       "description",
@@ -424,6 +467,7 @@ const handleUpdateEquipment = async (req: AuthRequest, res: Response) => {
       "model",
       "image",
       "rentalTerms",
+      "currency",
     ];
 
     allowedFields.forEach((field) => {

@@ -79,7 +79,7 @@ export const fulfillBookingFromSession = async (session: Stripe.Checkout.Session
     ownerId: new mongoose.Types.ObjectId(meta.ownerId),
     equipmentId: new mongoose.Types.ObjectId(meta.equipmentId),
     amount: totalAmount,
-    currency: session.currency || "usd",
+    currency: session.currency || "bdt",
     transactionId,
     stripeSessionId: sessionId,
     paymentMethod: "stripe",
@@ -234,7 +234,7 @@ router.post("/checkout", verifyToken, verifyRenter, async (req: AuthRequest, res
       line_items: [
         {
           price_data: {
-            currency: "usd",
+            currency: "bdt",
             product_data: {
               name: `${equipment.name} (${durationDays} Day${durationDays > 1 ? "s" : ""})`,
               description: `Rental from ${start.toLocaleDateString()} to ${end.toLocaleDateString()} &bull; Qty: ${numQuantity}`,
