@@ -57,6 +57,7 @@ export const fulfillBookingFromSession = async (session: Stripe.Checkout.Session
     endDate: new Date(meta.endDate),
     quantity,
     totalAmount,
+    currency: "BDT",
     contactNumber: meta.contactNumber,
     deliveryAddress: meta.deliveryAddress,
     additionalNotes: meta.additionalNotes || "",
@@ -79,7 +80,7 @@ export const fulfillBookingFromSession = async (session: Stripe.Checkout.Session
     ownerId: new mongoose.Types.ObjectId(meta.ownerId),
     equipmentId: new mongoose.Types.ObjectId(meta.equipmentId),
     amount: totalAmount,
-    currency: session.currency || "bdt",
+    currency: "BDT",
     transactionId,
     stripeSessionId: sessionId,
     paymentMethod: "stripe",
@@ -227,9 +228,12 @@ router.post("/checkout", verifyToken, verifyRenter, async (req: AuthRequest, res
     // Server-enforced total amount calculation (never trust client)
     const totalAmount = durationDays * equipment.rentalPrice * numQuantity;
 
-    // Create Stripe Checkout Session
+    // Resolve client origin dynamically with fallback to CLIENT_URL
+    const origin = (req.headers.origin as string) || (req.headers.referer ? new URL(req.headers.referer as string).origin : "") || CLIENT_URL;
+    const cleanOrigin = origin.replace(/\/$/, "");
+
+    // Create Stripe Checkout Session (Test Mode BDT)
     const sessionParams: any = {
-      payment_method_types: ["card"],
       mode: "payment",
       line_items: [
         {
@@ -237,10 +241,10 @@ router.post("/checkout", verifyToken, verifyRenter, async (req: AuthRequest, res
             currency: "bdt",
             product_data: {
               name: `${equipment.name} (${durationDays} Day${durationDays > 1 ? "s" : ""})`,
-              description: `Rental from ${start.toLocaleDateString()} to ${end.toLocaleDateString()} &bull; Qty: ${numQuantity}`,
-              images: equipment.image ? [equipment.image] : [],
+              description: `Rental from ${start.toLocaleDateString()} to ${end.toLocaleDateString()} • Qty: ${numQuantity}`,
+              images: equipment.image && equipment.image.startsWith("http") ? [equipment.image] : [],
             },
-            unit_amount: Math.round(totalAmount * 100), // Stripe expects cents
+            unit_amount: Math.round(totalAmount * 100), // Stripe expects minor units (paisa)
           },
           quantity: 1,
         },
@@ -257,8 +261,8 @@ router.post("/checkout", verifyToken, verifyRenter, async (req: AuthRequest, res
         deliveryAddress: deliveryAddress.trim(),
         additionalNotes: additionalNotes.trim(),
       },
-      success_url: `${CLIENT_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${CLIENT_URL}/equipment/${equipmentId}`,
+      success_url: `${cleanOrigin}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${cleanOrigin}/equipment/${equipmentId}`,
     };
 
     const session = await stripe.checkout.sessions.create(sessionParams);
@@ -301,6 +305,14 @@ router.get("/verify-session/:sessionId", verifyToken, async (req: AuthRequest, r
       return res.status(400).json({
         success: false,
         message: "Payment has not been completed for this session.",
+      });
+    }
+
+    // Authorization check: only the paying customer or an Admin may verify the session
+    if (req.user?.role !== "Admin" && session.metadata?.customerId && req.user?.id !== session.metadata.customerId) {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized to access this payment session.",
       });
     }
 

@@ -47,8 +47,9 @@ const paymentSchema = new Schema<IPayment>(
     },
     currency: {
       type: String,
-      default: "bdt",
-      lowercase: true,
+      default: "BDT",
+      uppercase: true,
+      trim: true,
     },
     transactionId: {
       type: String,
