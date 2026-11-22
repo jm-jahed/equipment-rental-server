@@ -12,6 +12,7 @@ import favoriteRoutes from "./routes/favorite.routes";
 import bookingRoutes, { handleStripeWebhook } from "./routes/booking.routes";
 import userRoutes from "./routes/user.routes";
 import analyticsRoutes from "./routes/analytics.routes";
+import cronRoutes from "./routes/cron.routes";
 import { initBookingCronJob, processExpiredRentals } from "./services/cron.service";
 
 dotenv.config();
@@ -20,12 +21,87 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:3000";
 
-// Middlewares: CORS
-app.use(cors({
-  origin: [CLIENT_URL, "http://localhost:3000", "https://equipment-rental-client-nine.vercel.app"],
-  credentials: true,
-  allowedHeaders: ["Content-Type", "Authorization", "stripe-signature"],
-}));
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://equipment-rental-client-nine.vercel.app",
+];
+if (process.env.CLIENT_URL) {
+  const cleanUrl = process.env.CLIENT_URL.replace(/\/$/, "");
+  if (!allowedOrigins.includes(cleanUrl)) allowedOrigins.push(cleanUrl);
+}
+
+// Middlewares: Resilient CORS
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const cleanOrigin = origin.replace(/\/$/, "");
+      if (
+        allowedOrigins.includes(cleanOrigin) ||
+        cleanOrigin.endsWith(".vercel.app")
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, true);
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "stripe-signature",
+      "x-requested-with",
+      "accept",
+      "origin",
+      "cookie",
+      "x-better-auth-client",
+      "better-auth-csrf-token",
+    ],
+    exposedHeaders: ["set-cookie"],
+  })
+);
+
+// Database connection middleware (guarantees DB is active in Vercel Serverless before routing)
+app.use(async (req: Request, res: Response, next) => {
+  const isBypassRoute = req.path === "/" || req.path === "/api" || req.path === "/api/health";
+
+  try {
+    if (mongoose.connection.readyState !== 1) {
+      const connected = await connectDB();
+      if (!connected && !isBypassRoute) {
+        return res.status(503).json({
+          success: false,
+          message: "Database service temporarily unavailable. Please retry shortly.",
+        });
+      }
+    }
+  } catch (err: any) {
+    console.error("[Database] Serverless connection error:", err.message);
+    if (!isBypassRoute) {
+      return res.status(503).json({
+        success: false,
+        message: "Database service temporarily unavailable. Please retry shortly.",
+      });
+    }
+  }
+
+  if (!isBypassRoute && mongoose.connection.readyState !== 1) {
+    return res.status(503).json({
+      success: false,
+      message: "Database service temporarily unavailable. Please retry shortly.",
+    });
+  }
+
+  next();
+});
+
+// Defensive URL rewrite: normalize redundant /api/api/* prefixes to /api/*
+app.use((req: Request, res: Response, next) => {
+  if (req.url.startsWith("/api/api/")) {
+    req.url = req.url.replace(/^\/api\/api\//, "/api/");
+  }
+  next();
+});
 
 // 1. Stripe Webhook Endpoint (Mounted with express.raw before express.json to preserve signature)
 app.post(
@@ -62,8 +138,11 @@ app.use("/api/users", userRoutes);
 // 10. Dynamic Analytics Routes (Admin & Owner Dashboards)
 app.use("/api/analytics", analyticsRoutes);
 
-// Root endpoint
-app.get("/", (req: Request, res: Response) => {
+// 11. Vercel Cron & Scheduled Jobs Endpoint
+app.use("/api/cron", cronRoutes);
+
+// Root and API status endpoints
+app.get(["/", "/api"], (req: Request, res: Response) => {
   res.json({
     status: "ok",
     message: "Equipment Rental API is running",
@@ -104,8 +183,8 @@ function getReadyStateDescription(state: number): string {
   }
 }
 
-// Start server
-if (process.env.NODE_ENV !== "test") {
+// Start server in non-test and non-serverless environments
+if (process.env.NODE_ENV !== "test" && !process.env.VERCEL) {
   app.listen(PORT, async () => {
     console.log(`Server is running on port ${PORT}`);
     await connectDB();

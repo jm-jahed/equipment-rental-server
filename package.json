@@ -2,7 +2,7 @@
   "name": "equipment-rental-server",
   "version": "1.0.0",
   "description": "Equipment Rental Platform API Server",
-  "main": "src/server.ts",
+  "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
