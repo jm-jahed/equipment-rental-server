@@ -17,6 +17,7 @@ export interface IBooking {
   paymentStatus: PaymentStatus;
   bookingStatus: BookingStatus;
   stripeSessionId?: string;
+  notificationsEnqueued?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -85,6 +86,11 @@ const bookingSchema = new Schema<IBooking>(
       type: String,
       default: "",
     },
+    notificationsEnqueued: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   {
     timestamps: true,
@@ -98,5 +104,6 @@ bookingSchema.index({ equipmentId: 1 });
 bookingSchema.index({ bookingStatus: 1 });
 bookingSchema.index({ paymentStatus: 1 });
 bookingSchema.index({ stripeSessionId: 1 });
+bookingSchema.index({ bookingStatus: 1, paymentStatus: 1, notificationsEnqueued: 1 });
 
 export const Booking = mongoose.model<IBooking>("Booking", bookingSchema);
