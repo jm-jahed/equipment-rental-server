@@ -4,7 +4,15 @@ import { jwt } from "better-auth/plugins";
 import bcrypt from "bcryptjs";
 import { mongoClient, mongoDb } from "./mongoClient";
 
-const AUTH_URL = process.env.BETTER_AUTH_URL || "http://localhost:5000";
+const AUTH_URL =
+  process.env.BETTER_AUTH_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : process.env.NODE_ENV === "production"
+    ? "https://equipment-rental-server-delta.vercel.app"
+    : "http://localhost:5000");
 
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;

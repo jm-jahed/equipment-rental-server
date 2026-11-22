@@ -2,7 +2,6 @@ import express, { Request, Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
-import { toNodeHandler } from "better-auth/node";
 import { connectDB } from "./config/db";
 import { auth } from "./config/auth";
 import authRoutes from "./routes/auth.routes";
@@ -118,7 +117,22 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use("/api/auth", authRoutes);
 
 // 4. BetterAuth Official Endpoints (JWKS, Social Callbacks, BetterAuth Client Plugins)
-app.all("/api/auth/*splat", toNodeHandler(auth));
+// Use lazy dynamic import to prevent CommonJS ERR_REQUIRE_ESM crashes in serverless environments
+let cachedBetterAuthHandler: any = null;
+const dynamicImport = new Function("s", "return import(s)");
+
+app.all("/api/auth/*splat", async (req: Request, res: Response, next) => {
+  try {
+    if (!cachedBetterAuthHandler) {
+      const { toNodeHandler } = await dynamicImport("better-auth/node");
+      cachedBetterAuthHandler = toNodeHandler(auth);
+    }
+    return cachedBetterAuthHandler(req, res);
+  } catch (err: any) {
+    console.error("[BetterAuth] Handler error:", err.message || err);
+    next(err);
+  }
+});
 
 // 5. Secure Image Upload Route (ImgBB Server-Side API Proxy)
 app.use("/api/upload", uploadRoutes);
