@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { User, IUser } from "../models/User";
@@ -267,7 +268,9 @@ router.get("/session-token", async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: "Session expired or invalid." });
     }
 
-    const user = await User.findById(sessionDoc.userId);
+    const user = mongoose.Types.ObjectId.isValid(sessionDoc.userId)
+      ? await User.findById(sessionDoc.userId)
+      : await User.findOne({ _id: sessionDoc.userId });
     if (!user) {
       return res.status(404).json({ success: false, message: "Associated user not found." });
     }

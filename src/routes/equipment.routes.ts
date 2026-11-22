@@ -376,11 +376,11 @@ router.post("/", verifyToken, verifyOwner, async (req: AuthRequest, res: Respons
 });
 
 /**
- * PATCH /api/equipment/:id
+ * PUT & PATCH /api/equipment/:id
  * Protected route to update equipment details.
  * Owners can only update their own listings; Admins can update any listing.
  */
-router.patch("/:id", verifyToken, verifyOwner, async (req: AuthRequest, res: Response) => {
+const handleUpdateEquipment = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -448,11 +448,13 @@ router.patch("/:id", verifyToken, verifyOwner, async (req: AuthRequest, res: Res
     console.error("Error updating equipment:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to update equipment.",
-      error: error.message,
+      message: "An error occurred while updating equipment.",
     });
   }
-});
+};
+
+router.patch("/:id", verifyToken, verifyOwner, handleUpdateEquipment);
+router.put("/:id", verifyToken, verifyOwner, handleUpdateEquipment);
 
 /**
  * PATCH /api/equipment/:id/status
