@@ -256,7 +256,7 @@ router.get("/session-token", async (req: Request, res: Response) => {
     const sessionToken = match ? decodeURIComponent(match[1]) : null;
 
     if (!sessionToken) {
-      return res.status(401).json({ success: false, message: "No active session cookie found." });
+      return res.status(200).json({ success: false, authenticated: false, message: "No active session cookie found." });
     }
 
     const sessionDoc = await mongoDb.collection("session").findOne({
