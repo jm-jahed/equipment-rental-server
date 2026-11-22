@@ -2,7 +2,7 @@
   "name": "equipment-rental-server",
   "version": "1.0.0",
   "description": "Equipment Rental Platform API Server",
-  "main": "dist/server.js",
+  "main": "src/server.ts",
   "engines": {
     "node": "22.x"
   },

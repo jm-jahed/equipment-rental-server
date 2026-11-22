@@ -1,7 +1,15 @@
 import { Request, Response, NextFunction } from "express";
-import { createRemoteJWKSet, jwtVerify } from "jose";
 import jwt from "jsonwebtoken";
 import { User, UserRole } from "../models/User";
+
+const dynamicImport = new Function("s", "return import(s)");
+let cachedJose: any = null;
+const getJose = async () => {
+  if (!cachedJose) {
+    cachedJose = await dynamicImport("jose");
+  }
+  return cachedJose;
+};
 
 export interface AuthUserPayload {
   id: string;
@@ -18,9 +26,10 @@ const AUTH_URL = process.env.BETTER_AUTH_URL || "http://localhost:5000";
 const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret_key";
 
 // Remote JWKS set pointing to BetterAuth's official JWKS endpoint
-let jwksInstance: ReturnType<typeof createRemoteJWKSet> | null = null;
-const getJWKS = () => {
+let jwksInstance: any = null;
+const getJWKS = async () => {
   if (!jwksInstance) {
+    const { createRemoteJWKSet } = await getJose();
     jwksInstance = createRemoteJWKSet(new URL(`${AUTH_URL}/api/auth/jwks`));
   }
   return jwksInstance;
@@ -46,7 +55,9 @@ export const verifyToken = async (req: AuthRequest, res: Response, next: NextFun
 
   // 1. Try RS256 JWKS verification (BetterAuth standard)
   try {
-    const { payload } = await jwtVerify(token, getJWKS(), {
+    const { jwtVerify } = await getJose();
+    const jwks = await getJWKS();
+    const { payload } = await jwtVerify(token, jwks, {
       issuer: AUTH_URL,
       audience: AUTH_URL,
     });

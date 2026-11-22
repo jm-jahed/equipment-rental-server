@@ -3,7 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import { connectDB } from "./config/db";
-import { auth } from "./config/auth";
+import { getAuth } from "./config/auth";
 import authRoutes from "./routes/auth.routes";
 import uploadRoutes from "./routes/upload.routes";
 import equipmentRoutes from "./routes/equipment.routes";
@@ -60,9 +60,21 @@ app.use(
   })
 );
 
+// Vercel Serverless Route Normalization: normalize duplicate prefixes (/api/api/*)
+app.use((req: Request, res: Response, next) => {
+  if (req.url.startsWith("/api/api/")) {
+    req.url = req.url.replace(/^\/api\/api\//, "/api/");
+  }
+  next();
+});
+
 // Database connection middleware (guarantees DB is active in Vercel Serverless before routing)
 app.use(async (req: Request, res: Response, next) => {
-  const isBypassRoute = req.path === "/" || req.path === "/api" || req.path === "/api/health";
+  const isBypassRoute =
+    req.path === "/" ||
+    req.path === "/api" ||
+    req.path === "/api/health" ||
+    req.path === "/health";
 
   try {
     if (mongoose.connection.readyState !== 1) {
@@ -125,6 +137,7 @@ app.all("/api/auth/*splat", async (req: Request, res: Response, next) => {
   try {
     if (!cachedBetterAuthHandler) {
       const { toNodeHandler } = await dynamicImport("better-auth/node");
+      const auth = await getAuth();
       cachedBetterAuthHandler = toNodeHandler(auth);
     }
     return cachedBetterAuthHandler(req, res);
@@ -165,7 +178,7 @@ app.get(["/", "/api"], (req: Request, res: Response) => {
 });
 
 // Accurate health check endpoint reporting database status
-app.get("/api/health", (req: Request, res: Response) => {
+app.get(["/api/health", "/health"], (req: Request, res: Response) => {
   const dbReadyState = mongoose.connection.readyState;
   const isDbConnected = dbReadyState === 1;
 

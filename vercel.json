@@ -1,5 +1,13 @@
 {
   "version": 2,
+  "functions": {
+    "api/**/*.ts": {
+      "includeFiles": "node_modules/{better-auth,@better-auth,jose}/**/*"
+    },
+    "src/server.ts": {
+      "includeFiles": "node_modules/{better-auth,@better-auth,jose}/**/*"
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",
@@ -9,7 +17,7 @@
   "crons": [
     {
       "path": "/api/cron/process-expired-rentals",
-      "schedule": "0 * * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }
